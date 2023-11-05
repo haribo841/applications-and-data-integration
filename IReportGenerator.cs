@@ -8,6 +8,6 @@ namespace Evaluation_task_3
 {
     internal interface IReportGenerator
     {
-        List<string[]> GenerateReport(Interval interval);
+        List<string[]> GenerateReport(List<Contract> contracts, Interval reportIntervals);
     }
 }

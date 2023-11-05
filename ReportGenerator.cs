@@ -1,34 +1,65 @@
-﻿using Evaluation_task_3;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
-internal class ReportGenerator : IReportGenerator
+namespace Evaluation_task_3
 {
-        public List<string[]> GenerateReport(List<Interval> interval)
+    internal class ReportGenerator : IReportGenerator
+    {
+        public List<string[]> GenerateReport(List<Contract> contracts, Interval reportInterval)
         {
-            List<string[]> intervals = new List<string[]>();
+            List<string[]> reportIntervals = new List<string[]>();
 
-            foreach (var reportInterval in interval)
+            TimeZoneInfo europeWarsawTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw");
+            DateTime reportStartDate = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(reportInterval.StartDate, DateTimeKind.Unspecified), europeWarsawTimeZone);
+            DateTime reportEndDate = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(reportInterval.EndDate, DateTimeKind.Unspecified), europeWarsawTimeZone);
+
+            Dictionary<int, TimeSpan> workTimeByContract = new Dictionary<int, TimeSpan>();
+
+            foreach (var contract in contracts)
             {
-                DateTime reportStartDate = TimeZoneInfo.ConvertTimeToUtc(reportInterval.StartDate, TimeZoneInfo.FindSystemTimeZoneById(reportInterval.TimeZone));
-                DateTime reportEndDate = TimeZoneInfo.ConvertTimeToUtc(reportInterval.EndDate, TimeZoneInfo.FindSystemTimeZoneById(reportInterval.TimeZone));
-                intervals.Add(new string[]
+                if (contract.StartDate <= reportEndDate && (!contract.EndDate.HasValue || contract.EndDate >= reportStartDate))
                 {
-                reportStartDate.ToString("yyyy-MM-ddTHH:mm:ss zzz"),
-                reportEndDate.ToString("yyyy-MM-ddTHH:mm:ss zzz")
-                });
+                    DateTime start = contract.StartDate > reportStartDate ? contract.StartDate : reportStartDate;
+                    DateTime end = !contract.EndDate.HasValue || contract.EndDate > reportEndDate ? reportEndDate : contract.EndDate.Value;
+
+                    DateTime overlapStart = start > reportStartDate ? start : reportStartDate;
+                    DateTime overlapEnd = end < reportEndDate ? end : reportEndDate;
+
+                    TimeSpan overlapDuration = overlapEnd - overlapStart;
+                }
             }
 
-            return intervals;
+            foreach (var kvp in workTimeByContract)
+            {
+                string intervalStart = TimeZoneInfo.ConvertTimeFromUtc(reportStartDate, europeWarsawTimeZone).ToString("yyyy-MM-ddTHH:mm:ss zzz");
+                string intervalEnd = TimeZoneInfo.ConvertTimeFromUtc(reportEndDate, europeWarsawTimeZone).ToString("yyyy-MM-ddTHH:mm:ss zzz");
+
+                if (kvp.Key == -1) // okres bez zatrudnienia
+                {
+                    reportIntervals.Add(new string[]
+                    {
+                intervalStart,
+                intervalEnd,
+                "No Employment",
+                kvp.Value.ToString(@"hh\:mm\:ss")
+                    });
+                }
+                else // kontrakt
+                {
+                    reportIntervals.Add(new string[]
+                    {
+                intervalStart,
+                intervalEnd,
+                kvp.Key.ToString(),
+                kvp.Value.ToString(@"hh\:mm\:ss")
+                    });
+                }
+            }
+
+            reportIntervals = reportIntervals.OrderBy(interval => DateTime.Parse(interval[0])).ToList();
+
+            return reportIntervals;
         }
-
-    internal List<string[]> GenerateReport(Interval interval)
-    {
-        throw new NotImplementedException();
-    }
-
-    List<string[]> IReportGenerator.GenerateReport(Interval interval)
-    {
-        throw new NotImplementedException();
     }
 }

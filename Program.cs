@@ -8,22 +8,33 @@ namespace Evaluation_task_3
         static void Main(string[] args)
         {
             string intervalFilePath = "C:\\Users\\Adam\\Desktop\\interval.csv";
-            string contractfilePath = "C:\\Users\\Adam\\Desktop\\test.csv";
-            CsvIntervalProvider intervalProvider = new CsvIntervalProvider();
-            Interval interval = intervalProvider.GetIntervalFromCsv(intervalFilePath);
+            string contractFilePath = "C:\\Users\\Adam\\Desktop\\test.csv";
+
+            IIntervalProvider intervalProvider = new CsvIntervalProvider();
+            Interval reportInterval = intervalProvider.GetIntervalFromCsv(intervalFilePath);
+
             IContractProvider contractProvider = new CsvContractProvider();
-            List<Contract> contracts = contractProvider.GetContractsFromCsv(contractfilePath);
+            List<Contract> contracts = contractProvider.GetContractsFromCsv(contractFilePath);
+
             ReportGenerator reportGenerator = new ReportGenerator();
-            List<string[]> report = reportGenerator.GenerateReport(interval);
-            if (interval != null)
+            List<string[]> report = reportGenerator.GenerateReport(contracts, reportInterval);
+
+            foreach (string[] intervalData in report)
             {
-                Console.WriteLine("Generated Report:");
-                    Console.WriteLine($"Interval: {interval.StartDate} - {interval.EndDate}");
-            }
-            else
-            {
-                Console.WriteLine("Nie udało się wczytać danych z pliku CSV.");
+                string intervalStart = intervalData[0];
+                string intervalEnd = intervalData[1];
+                string contractId = intervalData[2];
+                string workTime = intervalData[3];
+
+                Console.WriteLine($"Początek: {intervalStart}");
+                Console.WriteLine($"Koniec: {intervalEnd}");
+                Console.WriteLine($"ID Kontraktu: {contractId}");
+                Console.WriteLine($"Czas Pracy: {workTime}");
+                Console.WriteLine();
             }
         }
     }
 }
+
+
+

@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Globalization;
+using System.IO;
 
 namespace Evaluation_task_3
 {
@@ -14,33 +13,55 @@ namespace Evaluation_task_3
 
             using (var reader = new StreamReader(filePath))
             {
-                string line;
-                while ((line = reader.ReadLine()) != null)
+                string headerLine = reader.ReadLine(); 
+                while (!reader.EndOfStream)
                 {
-                    string[] parts = line.Split(' ');
+                    string line = reader.ReadLine();
+                    string[] parts = line.Split(',');
+
                     if (parts.Length >= 2)
                     {
-                        DateTime startDate;
-                        if (DateTime.TryParse(parts[0], out startDate))
+                        DateTime startDate = ParseDate(parts[0]);
+                        DateTime? endDate = ParseNullableDate(parts[1]);
+
+                        contracts.Add(new Contract
                         {
-                            if (parts.Length >= 3)
-                            {
-                                string endDateStr = parts[2];
-                                DateTime? endDate = !string.IsNullOrWhiteSpace(endDateStr) ? DateTime.Parse(endDateStr) : (DateTime?)null;
-                                string timeZone = parts[parts.Length - 1];
-                                contracts.Add(new Contract
-                                {
-                                    StartDate = startDate,
-                                    EndDate = endDate,
-                                    TimeZone = timeZone
-                                });
-                            }
-                        }
+                            StartDate = startDate,
+                            EndDate = endDate
+                        });
                     }
                 }
             }
 
             return contracts;
+        }
+
+        private DateTime ParseDate(string dateString)
+        {
+            DateTime parsedDate;
+
+            if (DateTime.TryParse(dateString, out parsedDate))
+            {
+
+                return DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
+            }
+            else
+            {
+
+                throw new Exception("Nie można sparsować daty.");
+            }
+        }
+
+        private DateTime? ParseNullableDate(string dateString)
+        {
+            if (dateString == "-")
+            {
+                return null; 
+            }
+            else
+            {
+                return ParseDate(dateString);
+            }
         }
     }
 }

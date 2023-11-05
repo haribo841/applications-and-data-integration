@@ -1,11 +1,7 @@
-﻿using CsvHelper.Configuration;
-using CsvHelper;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace Evaluation_task_3
@@ -15,6 +11,7 @@ namespace Evaluation_task_3
         public Interval GetIntervalFromCsv(string filePath)
         {
             Interval interval = null;
+            string timeZoneId = null;
 
             using (var reader = new StreamReader(filePath))
             {
@@ -28,16 +25,21 @@ namespace Evaluation_task_3
                     {
                         DateTime startDate = DateTime.Parse(match.Groups[1].Value);
                         DateTime endDate = DateTime.Parse(match.Groups[2].Value);
-                        string timeZone = match.Groups[3].Value;
+                        timeZoneId = match.Groups[3].Value;
 
                         interval = new Interval
                         {
                             StartDate = startDate,
-                            EndDate = endDate,
-                            TimeZone = timeZone
+                            EndDate = endDate
                         };
                     }
                 }
+            }
+
+            if (!string.IsNullOrWhiteSpace(timeZoneId) && interval != null)
+            {
+                TimeZoneInfo sourceTimeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                interval.TimeZone = sourceTimeZone.ToString();
             }
 
             return interval;
