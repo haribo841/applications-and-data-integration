@@ -1,153 +1,133 @@
-﻿using CsvHelper;
-using CsvHelper.Configuration;
-using CsvHelper.Configuration.Attributes;
-using CsvHelper.TypeConversion;
+﻿using Humanizer;
 using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
+using System.Diagnostics;
+using System.Drawing;
+using System.Management.Automation;
 using System.Reflection.Emit;
+using System.Windows.Forms;
+using static System.Net.Mime.MediaTypeNames;
+using Application = System.Windows.Forms.Application;
 
-class Program
+#pragma warning disable IDE0130 // Przestrzeń nazw jest zgodna ze strukturą folderów
+namespace PowerShellRunner
+#pragma warning restore IDE0130 // Przestrzeń nazw jest zgodna ze strukturą folderów
 {
-    static void Main()
+    public class MainForm : Form
     {
-        string intervalCsvPath = "C:\\Users\\Adam\\Desktop\\interval.csv";
-        string contractCsvPath = "C:\\Users\\Adam\\Desktop\\test.csv";
-        string outputCsvPath = "C:\\Users\\Adam\\Desktop\\output.csv";
+        private readonly TextBox txtUsername;
+        private readonly TextBox txtPassword;
+        private readonly Button btnRunScript;
 
-        var intervals = ReadIntervalsFromCsv(intervalCsvPath);
-        var contracts = ReadContractsFromCsv(contractCsvPath);
-
-        DateTime? startReportDate = intervals.Any() ? intervals.Min() : DateTime.UtcNow;
-        DateTime? endReportDate = intervals.Any() ? intervals.Max() : DateTime.UtcNow;
-
-        if (startReportDate == null || endReportDate == null)
+        public MainForm()
         {
-            throw new Exception("Błąd");
+            Text = "Nazwa skryptu";
+            Size = new Size(400, 200);
+            Environment.SetEnvironmentVariable("Path", @"C:\Program Files\PowerShell\7;" + Environment.GetEnvironmentVariable("Path"));
+            var lblUsername = new Label() { Text = "Użytkownik:", Left = 10, Top = 20, Width = 80 };
+            txtUsername = new TextBox() { Left = 100, Top = 20, Width = 250 };
+
+            var lblPassword = new Label() { Text = "Hasło:", Left = 10, Top = 60, Width = 80 };
+            txtPassword = new TextBox() { Left = 100, Top = 60, Width = 250, PasswordChar = '*' };
+
+            btnRunScript = new Button() { Text = "Nadpisz Bazę Testową", Left = 100, Top = 100, Width = 200 };
+#pragma warning disable CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
+            btnRunScript.Click += BtnRunScript_Click;
+#pragma warning restore CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
+
+            Controls.Add(lblUsername);
+            Controls.Add(txtUsername);
+            Controls.Add(lblPassword);
+            Controls.Add(txtPassword);
+            Controls.Add(btnRunScript);
         }
 
-        List<ReportRecord> reportIntervals = GenerateReportIntervals(startReportDate.Value, endReportDate.Value, contracts);
-
-        Console.WriteLine($"POCZĄTEK:\t\t\tKONIEC:");
-
-        foreach (var interval in reportIntervals)
+        public static void ExecuteCommand(string command)
         {
-            Console.WriteLine($"{interval.StartDate}\t{interval.EndDate}");
-        }
-
-        SaveReportToCsv(reportIntervals, outputCsvPath);
-        Console.WriteLine("Raport został zapisany do pliku report.csv");
-    }
-
-    static List<DateTime> ReadIntervalsFromCsv(string filePath)
-    {
-        using (var reader = new StreamReader(filePath))
-        using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)))
-        {
-            return csv.GetRecords<DateTime>().ToList();
-        }
-    }
-    static List<Contract> ReadContractsFromCsv(string filePath)
-    {
-        using (var reader = new StreamReader(filePath))
-        using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)))
-        {
-            return csv.GetRecords<Contract>().ToList();
-        }
-    }
-    static List<ReportRecord> GenerateReportIntervals(DateTime start, DateTime end, List<Contract> contracts)
-    {
-        List<ReportRecord> reportIntervals = new List<ReportRecord>();
-        DateTime currentIntervalStart = start;
-
-        foreach (var contract in contracts)
-        {
-            if (contract.StartDate.HasValue && contract.StartDate.Value > currentIntervalStart)
+            var processStartInfo = new ProcessStartInfo
             {
-                reportIntervals.Add(new ReportRecord
+                FileName = "powershell.exe",
+                Arguments = $"-Command \"{command}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true
+            };
+
+            using var process = new Process();
+            process.StartInfo = processStartInfo;
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd();
+            Console.WriteLine(output);
+        }
+        private void BtnRunScript_Click(object sender, EventArgs e)
+        {
+            string username = txtUsername.Text;
+            string password = txtPassword.Text;
+
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            {
+                MessageBox.Show("Podaj zarówno nazwę użytkownika, jak i hasło.");
+                return;
+            }
+            else if (username == "Login_usera" && password == "haslo_usera")
+            {
+                try
                 {
-                    StartDate = currentIntervalStart.ToString("yyyy-MM-ddTHH:mm:ss zzz"),
-                    EndDate = contract.StartDate.Value.ToString("yyyy-MM-ddTHH:mm:ss zzz")
-                });
+                    string command = @"
+# Sprawdzenie i instalacja modułu SqlServer
+if (-not (Get-Module -ListAvailable -Name SqlServer)) {
+    Write-Host 'SqlServer module not found. Installing...'
+    Install-Module -Name SqlServer -Scope CurrentUser -Force
+}
+Import-Module SqlServer
+
+# Parametry połączenia
+$sqlServerInstance = 'Nazwa_serera_SQL'
+$sqlJobName = 'Nazwa_triggera'
+
+# Bezpośrednie uwierzytelnienie SQL
+$connectionString = 'Server=TF-SQL;User ID=ID_usera_do_bazy;Password=Haslo_usera_do_bazy;'
+
+# Test połączenia
+try {
+    $testConnection = Invoke-SqlCmd -Query 'SELECT 1 AS ConnectionTest' -ConnectionString $connectionString -ErrorAction Stop
+    if ($testConnection.ConnectionTest -eq 1) {
+        Write-Host 'Connection to SQL Server successful.' -ForegroundColor Green
+    }
+} catch {
+    Write-Host 'Failed to connect to SQL Server. Please check your credentials and try again.' -ForegroundColor Red
+    exit
+}
+
+# Uruchomienie zadania SQL
+try {
+    $query = 'EXEC msdb.dbo.sp_start_job @job_name = N''Nazwa_triggera'';'
+    Invoke-SqlCmd -Query $query -ConnectionString $connectionString -ErrorAction Stop
+    Write-Host 'Zadanie SQL zostało uruchomione pomyślnie.' -ForegroundColor Green
+} catch {
+    Write-Host 'Failed to start SQL job. Error: $_' -ForegroundColor Red
+}
+
+# Czyszczenie pamięci
+[System.GC]::Collect()
+";
+
+                    ExecuteCommand(command);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Błąd: {ex.Message}");
+                }
             }
-
-            if (contract.EndDate.HasValue)
+            else
             {
-                currentIntervalStart = contract.EndDate.Value;
+                MessageBox.Show("Nieprawidłowa nazwa użytkownika lub hasło.");
             }
         }
 
-        if (currentIntervalStart < end)
+        [STAThread]
+        static void Main()
         {
-            reportIntervals.Add(new ReportRecord
-            {
-                StartDate = currentIntervalStart.ToString("yyyy-MM-ddTHH:mm:ss zzz"),
-                EndDate = end.ToString("yyyy-MM-ddTHH:mm:ss zzz")
-            });
-        }
-
-        return reportIntervals;
-    }
-    public static void SaveReportToCsv(List<ReportRecord> reportData, string filePath)
-    {
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            HasHeaderRecord = true, 
-        };
-
-        using (var writer = new StreamWriter(filePath))
-        using (var csv = new CsvWriter(writer, config))
-        {
-            csv.WriteRecords(reportData);
+            Application.EnableVisualStyles();
+            Application.Run(new MainForm());
         }
     }
-}
-    class Contract
-{
-    [TypeConverter(typeof(CustomDateTimeConverter))]
-    public DateTime? StartDate { get; set; }
-
-    [TypeConverter(typeof(CustomDateTimeConverter))]
-    public DateTime? EndDate { get; set; }
-}
-public class NullableDateTimeConverter : DefaultTypeConverter
-{
-    public override object ConvertFromString(string text, IReaderRow row, MemberMapData memberMapData)
-    {
-        if (text == "-")
-        {
-            return null;
-        }
-        else
-        {
-            return base.ConvertFromString(text, row, memberMapData);
-        }
-    }
-}
-public class CustomDateTimeConverter : ITypeConverter
-{
-    public object ConvertFromString(string text, IReaderRow row, MemberMapData memberMapData)
-    {
-        if (DateTime.TryParse(text, out DateTime result))
-        {
-            return result;
-        }
-        return null;
-    }
-    public string ConvertToString(object value, IWriterRow row, MemberMapData memberMapData)
-    {
-        if (value is DateTime dateTime)
-        {
-            return dateTime.ToString("yyyy-MM-ddTHH:mm:ss zzz");
-        }
-        return null;
-    }
-}
-
-class ReportRecord
-{
-    public string StartDate { get; set; }
-    public string EndDate { get; set; }
 }
