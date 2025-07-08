@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.7.34221.43
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Database Overwrite Program", "Database Overwrite Program\Database Overwrite Program.csproj", "{C4500B9B-367D-450B-8832-A5D73C612B9A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Program For Sending Documents By Email", "Program For Sending Documents By Email\Program For Sending Documents By Email.csproj", "{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C4500B9B-367D-450B-8832-A5D73C612B9A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4500B9B-367D-450B-8832-A5D73C612B9A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4500B9B-367D-450B-8832-A5D73C612B9A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4500B9B-367D-450B-8832-A5D73C612B9A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D8516EB7-A876-45DA-B12A-CE2B95EDD024}
+	EndGlobalSection
+EndGlobal
