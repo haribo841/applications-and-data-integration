@@ -26,7 +26,7 @@ namespace PowerShellRunner
             txtUsername = new TextBox() { Left = 100, Top = 20, Width = 250 };
             System.Windows.Forms.Label lblPassword = new() { Text = "Hasło:", Left = 10, Top = 60, Width = 80 };
             txtPassword = new TextBox() { Left = 100, Top = 60, Width = 250, PasswordChar = '*' };
-            btnRunScript = new Button() { Text = "Nadpisz Bazę Testową", Left = 100, Top = 100, Width = 200 };
+            btnRunScript = new Button() { Text = "Nadpisz Bazę Danych", Left = 100, Top = 100, Width = 200 };
 #pragma warning disable CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
             btnRunScript.Click += BtnRunScript_Click;
 #pragma warning restore CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
@@ -75,7 +75,7 @@ namespace PowerShellRunner
                         $sqlJobName = 'Nazwa_triggera'
 
                         # Bezpośrednie uwierzytelnienie SQL
-                        $connectionString = 'Server=TF-SQL;User ID=ID_usera_do_bazy;Password=Haslo_usera_do_bazy;'
+                        $connectionString = 'Server=Nazwa_serwera;User ID=ID_usera_do_bazy;Password=Haslo_usera_do_bazy;'
 
                         # Test połączenia
                         try {
@@ -96,9 +96,6 @@ namespace PowerShellRunner
                         } catch {
                             Write-Host 'Failed to start SQL job. Error: $_' -ForegroundColor Red
                         }
-
-                        # Czyszczenie pamięci
-                        [System.GC]::Collect()
                         ");
                     }
                 catch (Exception ex)
