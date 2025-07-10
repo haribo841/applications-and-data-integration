@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Database Overwrite Program"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Program For Sending Documents By Email", "Program For Sending Documents By Email\Program For Sending Documents By Email.csproj", "{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tree CRUD", "Tree CRUD\Tree CRUD.csproj", "{01DAFF38-1F9D-41B9-96E8-E522FB757F61}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EF243B9B-DDE2-46AE-AF31-9CA1C6511845}.Release|Any CPU.Build.0 = Release|Any CPU
+		{01DAFF38-1F9D-41B9-96E8-E522FB757F61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01DAFF38-1F9D-41B9-96E8-E522FB757F61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{01DAFF38-1F9D-41B9-96E8-E522FB757F61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{01DAFF38-1F9D-41B9-96E8-E522FB757F61}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

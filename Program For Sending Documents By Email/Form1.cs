@@ -216,9 +216,8 @@ namespace DocumentsViaEmailSender
             preview.FlatAppearance.BorderSize = 0;
             preview.ForeColor = send.ForeColor;
         }
-        private void Load(object sender, EventArgs e)
+        private new void Load(object sender, EventArgs e)
         {
         }
     }
 }
-
