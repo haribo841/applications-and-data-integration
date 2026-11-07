@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Management.Automation;//Install Cake.Powershell
-using System.Reflection.Emit;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
-using static System.Net.Mime.MediaTypeNames;
 using Application = System.Windows.Forms.Application;
 
 #pragma warning disable IDE0130 // Przestrzeń nazw jest zgodna ze strukturą folderów
@@ -15,18 +14,17 @@ namespace PowerShellRunner
     {
         private readonly TextBox txtUsername;
         private readonly TextBox txtPassword;
-        private readonly Button btnRunScript;
 
         public MainForm()
         {
             Text = "Nazwa skryptu";
-            Size = new Size(400, 200);
-            Environment.SetEnvironmentVariable("Path", @"C:\Program Files\PowerShell\7;" + Environment.GetEnvironmentVariable("Path"));
+            Size = new System.Drawing.Size(400, 200);
+
             System.Windows.Forms.Label lblUsername = new() { Text = "Użytkownik:", Left = 10, Top = 20, Width = 80 };
-            txtUsername = new TextBox() { Left = 100, Top = 20, Width = 250 };
+            txtUsername = new TextBox { Left = 100, Top = 20, Width = 250 };
             System.Windows.Forms.Label lblPassword = new() { Text = "Hasło:", Left = 10, Top = 60, Width = 80 };
-            txtPassword = new TextBox() { Left = 100, Top = 60, Width = 250, PasswordChar = '*' };
-            btnRunScript = new Button() { Text = "Nadpisz Bazę Danych", Left = 100, Top = 100, Width = 200 };
+            txtPassword = new TextBox { Left = 100, Top = 60, Width = 250, PasswordChar = '*' };
+            Button btnRunScript = new() { Text = "Nadpisz Bazę Danych", Left = 100, Top = 100, Width = 200 };
 #pragma warning disable CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
             btnRunScript.Click += BtnRunScript_Click;
 #pragma warning restore CS8622 // Dopuszczanie wartości null dla typów referencyjnych w typie parametru nie jest zgodne z docelowym delegatem (prawdopodobnie z powodu atrybutów dopuszczania wartości null).
@@ -37,81 +35,126 @@ namespace PowerShellRunner
             Controls.Add(btnRunScript);
         }
 
-        public static void ExecuteCommand(string command)
+        private static string ExecuteCommand(string script, string username, string password, string server, string jobName)
         {
             ProcessStartInfo processStartInfo = new()
             {
-                FileName = "powershell.exe",
-                Arguments = $"-Command \"{command}\"",
+                FileName = FindPowerShellExecutable(),
+                Arguments = "-NoProfile -NonInteractive -Command -",
                 UseShellExecute = false,
-                RedirectStandardOutput = true
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            processStartInfo.Environment["SQLSERVER_USERNAME"] = username;
+            processStartInfo.Environment["SQLSERVER_PASSWORD"] = password;
+            processStartInfo.Environment["SQLSERVER_INSTANCE"] = server;
+            processStartInfo.Environment["SQLSERVER_JOB"] = jobName;
+
+            using Process process = new() { StartInfo = processStartInfo };
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("PowerShell could not be started.");
+            }
+
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> errorTask = process.StandardError.ReadToEndAsync();
+            process.StandardInput.WriteLine(script);
+            process.StandardInput.Close();
+            Task.WaitAll(outputTask, errorTask);
+            process.WaitForExit();
+
+            string output = outputTask.Result.Trim();
+            string error = errorTask.Result.Trim();
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "PowerShell reported an error." : error);
+            }
+
+            return output;
+        }
+
+        private static string FindPowerShellExecutable()
+        {
+            string[] candidates =
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "PowerShell", "7", "pwsh.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
             };
 
-            using Process process = new();
-            process.StartInfo = processStartInfo;
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd();
-            Console.WriteLine(output);
+            return candidates.FirstOrDefault(File.Exists)
+                ?? throw new FileNotFoundException("PowerShell 7 or Windows PowerShell could not be found.");
         }
+
         private void BtnRunScript_Click(object sender, EventArgs e)
         {
             string username = txtUsername.Text;
             string password = txtPassword.Text;
-
-            if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password) && username == "Login_usera" && password == "haslo_usera")
-            {
-                try
-                {
-                    ExecuteCommand(@"
-                        # Sprawdzenie i instalacja modułu SqlServer
-                        if (-not (Get-Module -ListAvailable -Name SqlServer)) {
-                            Write-Host 'SqlServer module not found. Installing...'
-                            Install-Module -Name SqlServer -Scope CurrentUser -Force
-                        }
-                        Import-Module SqlServer
-
-                        # Parametry połączenia
-                        $sqlServerInstance = 'Nazwa_serera_SQL'
-                        $sqlJobName = 'Nazwa_triggera'
-
-                        # Bezpośrednie uwierzytelnienie SQL
-                        $connectionString = 'Server=Nazwa_serwera;User ID=ID_usera_do_bazy;Password=Haslo_usera_do_bazy;'
-
-                        # Test połączenia
-                        try {
-                            $testConnection = Invoke-SqlCmd -Query 'SELECT 1 AS ConnectionTest' -ConnectionString $connectionString -ErrorAction Stop
-                            if ($testConnection.ConnectionTest -eq 1) {
-                                Write-Host 'Connection to SQL Server successful.' -ForegroundColor Green
-                            }
-                        } catch {
-                            Write-Host 'Failed to connect to SQL Server. Please check your credentials and try again.' -ForegroundColor Red
-                            exit
-                        }
-
-                        # Uruchomienie zadania SQL
-                        try {
-                            $query = 'EXEC msdb.dbo.sp_start_job @job_name = N''Nazwa_triggera'';'
-                            Invoke-SqlCmd -Query $query -ConnectionString $connectionString -ErrorAction Stop
-                            Write-Host 'Zadanie SQL zostało uruchomione pomyślnie.' -ForegroundColor Green
-                        } catch {
-                            Write-Host 'Failed to start SQL job. Error: $_' -ForegroundColor Red
-                        }
-                        ");
-                    }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Błąd: {ex.Message}");
-                }
-            }
-            else
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
                 MessageBox.Show("Podaj zarówno nazwę użytkownika, jak i hasło.");
                 return;
             }
+
+            string server = Environment.GetEnvironmentVariable("SQLSERVER_INSTANCE") ?? string.Empty;
+            string jobName = Environment.GetEnvironmentVariable("SQLSERVER_JOB") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(jobName))
+            {
+                MessageBox.Show("Ustaw zmienne środowiskowe SQLSERVER_INSTANCE i SQLSERVER_JOB.");
+                return;
+            }
+
+            const string script = @"
+$ErrorActionPreference = 'Stop'
+try {
+    if (-not (Get-Module -ListAvailable -Name SqlServer)) {
+        Install-Module -Name SqlServer -Scope CurrentUser -Force -ErrorAction Stop
+    }
+    Import-Module SqlServer -ErrorAction Stop
+
+    Invoke-SqlCmd -Query 'SELECT 1 AS ConnectionTest' `
+        -ServerInstance $env:SQLSERVER_INSTANCE `
+        -Username $env:SQLSERVER_USERNAME `
+        -Password $env:SQLSERVER_PASSWORD `
+        -ErrorAction Stop | Out-Null
+
+    $escapedJobName = $env:SQLSERVER_JOB.Replace(""'"", ""''"")
+    $query = ""EXEC msdb.dbo.sp_start_job @job_name = N'$escapedJobName';""
+    Invoke-SqlCmd -Query $query `
+        -ServerInstance $env:SQLSERVER_INSTANCE `
+        -Username $env:SQLSERVER_USERNAME `
+        -Password $env:SQLSERVER_PASSWORD `
+        -ErrorAction Stop | Out-Null
+
+    Write-Output 'Zadanie SQL zostało uruchomione pomyślnie.'
+} catch {
+    Write-Error $_
+    exit 1
+}
+";
+
+            try
+            {
+                string output = ExecuteCommand(script, username, password, server, jobName);
+                if (!string.IsNullOrWhiteSpace(output))
+                {
+                    MessageBox.Show(output, "Informacja", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Błąd: {ex.Message}");
+            }
+            finally
+            {
+                txtPassword.Clear();
+            }
         }
 
         [STAThread]
-        static void Main()
+        private static void Main()
         {
             Application.EnableVisualStyles();
             Application.Run(new MainForm());

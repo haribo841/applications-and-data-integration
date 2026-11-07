@@ -9,6 +9,16 @@ namespace TreeCRUD
 {
     public partial class Form1 : Form
     {
+        private const string AddItemCaption = "Add item";
+        private const string EditItemCaption = "Edit item";
+        private const string InvalidElementNameMessage = "The element name cannot contain the character '|'.";
+        private const string ValidationErrorCaption = "Validation error";
+        private const string CriticalErrorCaption = "Critical error";
+        private const string SuccessCaption = "Success";
+        private const string NoSelectionCaption = "No selection";
+        private const string AttributeIdParameter = "@deAId";
+        private const string ValueParameter = "@value";
+
         private static readonly Lazy<string> _connString = new Lazy<string>(() =>
         ConfigurationManager.ConnectionStrings["Default"].ConnectionString);
         public static string ConnString => _connString.Value;
@@ -45,7 +55,7 @@ namespace TreeCRUD
                     while (reader.Read())
                     {
                         int listId = reader.GetInt32(reader.GetOrdinal("DAE_DeAId"));
-                        string value = reader.GetString(reader.GetOrdinal("DAE_Wartosc"));
+                        string value = reader.GetString(reader.GetOrdinal("DAE_Value"));
                         if (!_dataByListId.TryGetValue(listId, out List<string> list))
                         {
                             list = new List<string>();
@@ -59,60 +69,75 @@ namespace TreeCRUD
         private void BuildHierarchyFromRawData()
         {
             _subItems.Clear();
-            foreach (KeyValuePair<int, List<string>> listIdEntry in _dataByListId)
+            foreach (List<string> paths in _dataByListId.Values)
             {
-                foreach (string[] parts in from path in listIdEntry.Value
-                                      let parts = path.Split('|')
-                                      select parts)
+                foreach (string path in paths)
                 {
-                    if (parts.Length == 1)
-                    {
-                        if (!_subItems.ContainsKey(parts[0]))
-                        {
-                            _subItems[parts[0]] = new Dictionary<string, Dictionary<string, List<string>>>();
-                        }
-                    }
-                    else if (parts.Length == 2)
-                    {
-                        if (_subItems.TryGetValue(parts[0], out Dictionary<string, Dictionary<string, List<string>>> level2Dict))
-                        {
-                            if (!level2Dict.ContainsKey(parts[1]))
-                            {
-                                level2Dict[parts[1]] = new Dictionary<string, List<string>>();
-                            }
-                        }
-                    }
-                    else if (parts.Length == 3)
-                    {
-                        if (_subItems.TryGetValue(parts[0], out Dictionary<string, Dictionary<string, List<string>>> level2Dict))
-                        {
-                            if (level2Dict.TryGetValue(parts[1], out Dictionary<string, List<string>> level3Dict))
-                            {
-                                if (!level3Dict.ContainsKey(parts[2]))
-                                {
-                                    level3Dict[parts[2]] = new List<string>();
-                                }
-                            }
-                        }
-                    }
-                    else if (parts.Length == 4)
-                    {
-                        if (_subItems.TryGetValue(parts[0], out Dictionary<string, Dictionary<string, List<string>>> level2Dict))
-                        {
-                            if (level2Dict.TryGetValue(parts[1], out Dictionary<string, List<string>> level3Dict))
-                            {
-                                if (level3Dict.TryGetValue(parts[2], out List<string> level4List))
-                                {
-                                    if (!level4List.Contains(parts[3]))
-                                    {
-                                        level4List.Add(parts[3]);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    AddPathToHierarchy(path);
                 }
             }
+        }
+
+        private void AddPathToHierarchy(string path)
+        {
+            string[] parts = path.Split('|');
+            if (parts.Length == 0 || parts.Length > 4)
+            {
+                return;
+            }
+
+            Dictionary<string, Dictionary<string, List<string>>> level2 = GetOrAddLevel2(parts[0]);
+            if (parts.Length == 1)
+            {
+                return;
+            }
+
+            Dictionary<string, List<string>> level3 = GetOrAddLevel3(level2, parts[1]);
+            if (parts.Length == 2)
+            {
+                return;
+            }
+
+            List<string> level4 = GetOrAddLevel4(level3, parts[2]);
+            if (parts.Length == 4 && !level4.Contains(parts[3]))
+            {
+                level4.Add(parts[3]);
+            }
+        }
+
+        private Dictionary<string, Dictionary<string, List<string>>> GetOrAddLevel2(string root)
+        {
+            if (!_subItems.TryGetValue(root, out Dictionary<string, Dictionary<string, List<string>>> level2))
+            {
+                level2 = new Dictionary<string, Dictionary<string, List<string>>>();
+                _subItems.Add(root, level2);
+            }
+
+            return level2;
+        }
+
+        private static Dictionary<string, List<string>> GetOrAddLevel3(
+            Dictionary<string, Dictionary<string, List<string>>> level2,
+            string item)
+        {
+            if (!level2.TryGetValue(item, out Dictionary<string, List<string>> level3))
+            {
+                level3 = new Dictionary<string, List<string>>();
+                level2.Add(item, level3);
+            }
+
+            return level3;
+        }
+
+        private static List<string> GetOrAddLevel4(Dictionary<string, List<string>> level3, string item)
+        {
+            if (!level3.TryGetValue(item, out List<string> level4))
+            {
+                level4 = new List<string>();
+                level3.Add(item, level4);
+            }
+
+            return level4;
         }
         private void UpdateFirstList()
         {
@@ -121,7 +146,7 @@ namespace TreeCRUD
         }
         private void BtnAddFirst_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the first level:", "Add item");
+            string input = Prompt.ShowDialog("Enter the name of the first level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_No)
@@ -131,8 +156,8 @@ namespace TreeCRUD
             using (SqlConnection conn = new SqlConnection(ConnString))
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue("@deAId", 2);
-                cmd.Parameters.AddWithValue("@value", input);
+                cmd.Parameters.AddWithValue(AttributeIdParameter, 2);
+                cmd.Parameters.AddWithValue(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -145,11 +170,11 @@ namespace TreeCRUD
         {
             if (listBoxFirst.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog("Enter a new name for the item:", "Edit item");
+                string newKey = Prompt.ShowDialog("Enter a new name for the item:", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show("The element name cannot contain the character '|'.", "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 using (SqlConnection conn = new SqlConnection(ConnString))
@@ -191,7 +216,7 @@ namespace TreeCRUD
                     catch (Exception ex)
                     {
                         transaction.Rollback();
-                        MessageBox.Show($"An error occurred while updating data: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
             }
@@ -252,23 +277,15 @@ namespace TreeCRUD
                 ToggleGroup(2, true);
             }
         }
-        private void UpdateSecondList()
-        {
-            listBoxSecond.DataSource = null;
-            if (listBoxFirst.SelectedItem is string sel1 && _subItems.TryGetValue(sel1, out Dictionary<string, Dictionary<string, List<string>>> children))
-            {
-                listBoxSecond.DataSource = children.Keys.ToList();
-            }
-        }
         private void BtnAddSecond_Click(object sender, EventArgs e)
         {
             if (listBoxFirst.SelectedItem is string first)
             {
-                string input = Prompt.ShowDialog("Enter the name of level 2:", "Add item");
+                string input = Prompt.ShowDialog("Enter the name of level 2:", AddItemCaption);
                 if (string.IsNullOrWhiteSpace(input)) return;
                 if (input.Contains("|"))
                 {
-                    MessageBox.Show("The element name cannot contain the character '|'.", "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string fullPath = $"{first}|{input}";
@@ -284,8 +301,8 @@ namespace TreeCRUD
                     using (SqlConnection conn = new SqlConnection(ConnString))
                     using (SqlCommand cmd = new SqlCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@deAId", 1);
-                        cmd.Parameters.AddWithValue("@value", fullPath);
+                        cmd.Parameters.AddWithValue(AttributeIdParameter, 1);
+                        cmd.Parameters.AddWithValue(ValueParameter, fullPath);
                         conn.Open();
                         cmd.ExecuteNonQuery();
                     }
@@ -298,27 +315,27 @@ namespace TreeCRUD
                     {
                         listBoxSecond.SelectedItem = input;
                     }
-                    MessageBox.Show("The item was added successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The item was added successfully.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while adding the item: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"An error occurred while adding the item: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first list to which you want to add a sub-item.", "No selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Please select an item from the first list to which you want to add a sub-item.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnEditSecond_Click(object sender, EventArgs e)
         {
             if (listBoxFirst.SelectedItem is string parentKey && listBoxSecond.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", "Edit item");
+                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show("The element name cannot contain the character '|'.", "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey}|{oldKey}";
@@ -348,84 +365,96 @@ namespace TreeCRUD
                     listBoxFirst.DataSource = _subItems.Keys.ToList();
                     listBoxFirst.SelectedItem = parentKey;
                     listBoxSecond.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first and second level lists.", "No selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Please select an item from the first and second level lists.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveSecond_Click(object sender, EventArgs e)
         {
-            if (listBoxFirst.SelectedItem is string first && listBoxSecond.SelectedItem is string second)
+            if (!(listBoxFirst.SelectedItem is string first) || !(listBoxSecond.SelectedItem is string second))
             {
-                DialogResult confirmResult = MessageBox.Show($"Are you sure you want to delete the item? '{second}' from level 2 (related to '{first}')?",
-                                                   "Confirm deletion",
-                                                   MessageBoxButtons.YesNo,
-                                                   MessageBoxIcon.Question);
-                if (confirmResult == DialogResult.Yes)
+                MessageBox.Show("Please select an item to remove from the second list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DialogResult confirmResult = MessageBox.Show(
+                $"Are you sure you want to delete the item? '{second}' from level 2 (related to '{first}')?",
+                "Confirm deletion",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (confirmResult != DialogResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                int rowsAffected = DeleteSecondLevelPath($"{first}|{second}");
+                if (rowsAffected == 0)
                 {
-                    string fullPathToDelete = $"{first}|{second}";
-                    const string sql = @"
-                        DELETE FROM CDN.DefAtrElem
-                        WHERE DAE_DeAId = @deAId AND DAE_Value = @value";
-                    try
-                    {
-                        using (SqlConnection conn = new SqlConnection(ConnString))
-                        using (SqlCommand cmd = new SqlCommand(sql, conn))
-                        {
-                            cmd.Parameters.AddWithValue("@deAId", 2);
-                            cmd.Parameters.AddWithValue("@wartosc", fullPathToDelete);
-                            conn.Open();
-                            int rowsAffected = cmd.ExecuteNonQuery();
-                            if (rowsAffected > 0)
-                            {
-                                MessageBox.Show("The item was successfully deleted from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                                LoadDataFromDb();
-                                BuildHierarchyFromRawData();
-                                int originalFirstSelectedIndex = listBoxFirst.SelectedIndex;
-                                listBoxFirst.SelectedIndex = -1;
-                                if (originalFirstSelectedIndex >= 0 && originalFirstSelectedIndex < listBoxFirst.Items.Count)
-                                {
-                                    listBoxFirst.SelectedIndex = originalFirstSelectedIndex;
-                                }
-                                else if (listBoxFirst.Items.Count > 0)
-                                {
-                                    listBoxFirst.SelectedIndex = 0;
-                                }
-                                else
-                                {
-                                    listBoxFirst.SelectedIndex = -1;
-                                }
-                                if (!_subItems.TryGetValue(first, out Dictionary<string, Dictionary<string, List<string>>> children) || !children.Any())
-                                {
-                                    ClearAndDisableLevel(2);
-                                }
-                                else
-                                {
-                                    ClearAndDisableLevel(3);
-                                }
-                            }
-                            else
-                            {
-                                MessageBox.Show("No item found to delete in the database.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"An error occurred while deleting the item from the database: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
+                    MessageBox.Show("No item found to delete in the database.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
                 }
+
+                MessageBox.Show("The item was successfully deleted from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RefreshAfterSecondLevelDeletion(first);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while deleting the item from the database: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static int DeleteSecondLevelPath(string path)
+        {
+            const string sql = @"
+                DELETE FROM CDN.DefAtrElem
+                WHERE DAE_DeAId = @deAId AND DAE_Value = @value";
+            using (SqlConnection conn = new SqlConnection(ConnString))
+            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue(AttributeIdParameter, 2);
+                cmd.Parameters.AddWithValue(ValueParameter, path);
+                conn.Open();
+                return cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void RefreshAfterSecondLevelDeletion(string first)
+        {
+            LoadDataFromDb();
+            BuildHierarchyFromRawData();
+
+            int originalFirstSelectedIndex = listBoxFirst.SelectedIndex;
+            listBoxFirst.SelectedIndex = -1;
+            if (originalFirstSelectedIndex >= 0 && originalFirstSelectedIndex < listBoxFirst.Items.Count)
+            {
+                listBoxFirst.SelectedIndex = originalFirstSelectedIndex;
+            }
+            else if (listBoxFirst.Items.Count > 0)
+            {
+                listBoxFirst.SelectedIndex = 0;
             }
             else
             {
-                MessageBox.Show("Please select an item to remove from the second list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                listBoxFirst.SelectedIndex = -1;
+            }
+
+            if (!_subItems.TryGetValue(first, out Dictionary<string, Dictionary<string, List<string>>> children) || !children.Any())
+            {
+                ClearAndDisableLevel(2);
+            }
+            else
+            {
+                ClearAndDisableLevel(3);
             }
         }
         private void ListBoxSecond_SelectedIndexChanged(object sender, EventArgs e)
@@ -451,7 +480,7 @@ namespace TreeCRUD
         }
         private void BtnAddThird_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the third level:", "Add item");
+            string input = Prompt.ShowDialog("Enter the name of the third level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_Lp)
@@ -461,8 +490,8 @@ namespace TreeCRUD
             using (SqlConnection conn = new SqlConnection(ConnString))
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue("@deAId", 3);
-                cmd.Parameters.AddWithValue("@value", input);
+                cmd.Parameters.AddWithValue(AttributeIdParameter, 3);
+                cmd.Parameters.AddWithValue(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -477,11 +506,11 @@ namespace TreeCRUD
                 listBoxSecond.SelectedItem is string parentKey2 &&
                 listBoxThird.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", "Edit item");
+                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show("The element name cannot contain the character '|'.", "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey1}|{parentKey2}|{oldKey}";
@@ -512,16 +541,16 @@ namespace TreeCRUD
                     listBoxFirst.SelectedItem = parentKey1;
                     listBoxSecond.SelectedItem = parentKey2;
                     listBoxThird.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first, second, and third level lists..", "No selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Please select an item from the first, second, and third level lists..", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveThird_Click(object sender, EventArgs e)
@@ -553,7 +582,7 @@ namespace TreeCRUD
         }
         private void BtnAddFourth_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the fourth level:", "Add item");
+            string input = Prompt.ShowDialog("Enter the name of the fourth level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_Lp)
@@ -563,8 +592,8 @@ namespace TreeCRUD
             using (SqlConnection conn = new SqlConnection(ConnString))
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue("@deAId", 55);
-                cmd.Parameters.AddWithValue("@value", input);
+                cmd.Parameters.AddWithValue(AttributeIdParameter, 55);
+                cmd.Parameters.AddWithValue(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -579,11 +608,11 @@ namespace TreeCRUD
                 listBoxThird.SelectedItem is string parentKey3 &&
                 listBoxFourth.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", "Edit item");
+                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show("The element name cannot contain the character '|'.", "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey1}|{parentKey2}|{parentKey3}|{oldKey}";
@@ -615,16 +644,16 @@ namespace TreeCRUD
                     listBoxSecond.SelectedItem = parentKey2;
                     listBoxThird.SelectedItem = parentKey3;
                     listBoxFourth.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", "Critical error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select the item on all four levels.", "No selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Please select the item on all four levels.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveFourth_Click(object sender, EventArgs e)
@@ -661,20 +690,22 @@ namespace TreeCRUD
         }
         private void ClearAndDisableLevel(int level)
         {
-            switch (level)
+            if (level == 2)
             {
-                case 2:
-                    listBoxSecond.DataSource = null;
-                    ToggleGroup(2, false);
-                    goto case 3;
-                case 3:
-                    listBoxThird.DataSource = null;
-                    ToggleGroup(3, false);
-                    goto case 4;
-                case 4:
-                    listBoxFourth.DataSource = null;
-                    ToggleGroup(4, false);
-                    break;
+                listBoxSecond.DataSource = null;
+                ToggleGroup(2, false);
+            }
+
+            if (level == 2 || level == 3)
+            {
+                listBoxThird.DataSource = null;
+                ToggleGroup(3, false);
+            }
+
+            if (level >= 2 && level <= 4)
+            {
+                listBoxFourth.DataSource = null;
+                ToggleGroup(4, false);
             }
         }
     }
