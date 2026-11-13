@@ -2,9 +2,12 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Application = System.Windows.Forms.Application;
+
+[assembly: InternalsVisibleTo("DatabaseOverwrite.Tests")]
 
 #pragma warning disable IDE0130 // Przestrzeń nazw jest zgodna ze strukturą folderów
 namespace PowerShellRunner
@@ -14,9 +17,22 @@ namespace PowerShellRunner
     {
         private readonly TextBox txtUsername;
         private readonly TextBox txtPassword;
+        private readonly Func<string, string, string, string, string, string> executeCommand;
+        private readonly Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> showMessage;
+        private readonly Func<string, string?> getEnvironmentVariable;
 
-        public MainForm()
+        public MainForm() : this(ExecuteCommand, MessageBox.Show, Environment.GetEnvironmentVariable)
         {
+        }
+
+        internal MainForm(
+            Func<string, string, string, string, string, string> executeCommand,
+            Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> showMessage,
+            Func<string, string?> getEnvironmentVariable)
+        {
+            this.executeCommand = executeCommand;
+            this.showMessage = showMessage;
+            this.getEnvironmentVariable = getEnvironmentVariable;
             Text = "Nazwa skryptu";
             Size = new System.Drawing.Size(400, 200);
 
@@ -35,7 +51,7 @@ namespace PowerShellRunner
             Controls.Add(btnRunScript);
         }
 
-        private static string ExecuteCommand(string script, string username, string password, string server, string jobName)
+        internal static string ExecuteCommand(string script, string username, string password, string server, string jobName)
         {
             ProcessStartInfo processStartInfo = new()
             {
@@ -75,7 +91,7 @@ namespace PowerShellRunner
             return output;
         }
 
-        private static string FindPowerShellExecutable()
+        internal static string FindPowerShellExecutable(Func<string, bool>? fileExists = null)
         {
             string[] candidates =
             {
@@ -84,7 +100,7 @@ namespace PowerShellRunner
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
             };
 
-            return candidates.FirstOrDefault(File.Exists)
+            return candidates.FirstOrDefault(fileExists ?? File.Exists)
                 ?? throw new FileNotFoundException("PowerShell 7 or Windows PowerShell could not be found.");
         }
 
@@ -94,15 +110,15 @@ namespace PowerShellRunner
             string password = txtPassword.Text;
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
-                MessageBox.Show("Podaj zarówno nazwę użytkownika, jak i hasło.");
+                showMessage("Podaj zarówno nazwę użytkownika, jak i hasło.", "", MessageBoxButtons.OK, MessageBoxIcon.None);
                 return;
             }
 
-            string server = Environment.GetEnvironmentVariable("SQLSERVER_INSTANCE") ?? string.Empty;
-            string jobName = Environment.GetEnvironmentVariable("SQLSERVER_JOB") ?? string.Empty;
+            string server = getEnvironmentVariable("SQLSERVER_INSTANCE") ?? string.Empty;
+            string jobName = getEnvironmentVariable("SQLSERVER_JOB") ?? string.Empty;
             if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(jobName))
             {
-                MessageBox.Show("Ustaw zmienne środowiskowe SQLSERVER_INSTANCE i SQLSERVER_JOB.");
+                showMessage("Ustaw zmienne środowiskowe SQLSERVER_INSTANCE i SQLSERVER_JOB.", "", MessageBoxButtons.OK, MessageBoxIcon.None);
                 return;
             }
 
@@ -137,15 +153,15 @@ try {
 
             try
             {
-                string output = ExecuteCommand(script, username, password, server, jobName);
+                string output = executeCommand(script, username, password, server, jobName);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
-                    MessageBox.Show(output, "Informacja", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    showMessage(output, "Informacja", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Błąd: {ex.Message}");
+                showMessage($"Błąd: {ex.Message}", "", MessageBoxButtons.OK, MessageBoxIcon.None);
             }
             finally
             {

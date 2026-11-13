@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Windows.Forms;
@@ -26,10 +27,32 @@ namespace TreeCRUD
             = new Dictionary<string, Dictionary<string, Dictionary<string, List<string>>>>();
         private readonly Dictionary<int, List<string>> _dataByListId
             = new Dictionary<int, List<string>>();
-        public Form1()
+        private readonly Func<IDbConnection> _connectionFactory;
+        private readonly Func<string, string, string> _prompt;
+        private readonly Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> _showMessage;
+
+        public Form1() : this(() => new SqlConnection(ConnString), Prompt.ShowDialog, MessageBox.Show)
         {
+        }
+
+        internal Form1(
+            Func<IDbConnection> connectionFactory,
+            Func<string, string, string> prompt,
+            Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> showMessage)
+        {
+            _connectionFactory = connectionFactory;
+            _prompt = prompt;
+            _showMessage = showMessage;
             InitializeComponent();
             this.Load += MainForm_Load;
+        }
+
+        private static IDbCommand CreateCommand(string sql, IDbConnection connection, IDbTransaction transaction = null)
+        {
+            IDbCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.Transaction = transaction;
+            return command;
         }
         private void MainForm_Load(object sender, EventArgs e)
         {
@@ -46,11 +69,11 @@ namespace TreeCRUD
                 FROM CDN.DefAtrElem
                 WHERE DAE_DeAId IN (2, 1, 3, 7)
                 ORDER BY DAE_DeAId, DAE_No";
-            using (SqlConnection conn = new SqlConnection(ConnString))
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            using (IDbConnection conn = _connectionFactory())
+            using (IDbCommand cmd = CreateCommand(sql, conn))
             {
                 conn.Open();
-                using (SqlDataReader reader = cmd.ExecuteReader())
+                using (IDataReader reader = cmd.ExecuteReader())
                 {
                     while (reader.Read())
                     {
@@ -146,18 +169,18 @@ namespace TreeCRUD
         }
         private void BtnAddFirst_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the first level:", AddItemCaption);
+            string input = _prompt("Enter the name of the first level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_No)
                 VALUES (@deAId, @value,
                    (SELECT ISNULL(MAX(DAE_Lp), 0) + 1 FROM CDN.DefAtrElem WHERE DAE_DeAId = @deAId)
                 )";
-            using (SqlConnection conn = new SqlConnection(ConnString))
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            using (IDbConnection conn = _connectionFactory())
+            using (IDbCommand cmd = CreateCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue(AttributeIdParameter, 2);
-                cmd.Parameters.AddWithValue(ValueParameter, input);
+                cmd.AddParameter(AttributeIdParameter, 2);
+                cmd.AddParameter(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -170,43 +193,43 @@ namespace TreeCRUD
         {
             if (listBoxFirst.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog("Enter a new name for the item:", EditItemCaption);
+                string newKey = _prompt("Enter a new name for the item:", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
-                using (SqlConnection conn = new SqlConnection(ConnString))
+                using (IDbConnection conn = _connectionFactory())
                 {
                     conn.Open();
-                    SqlTransaction transaction = conn.BeginTransaction();
+                    IDbTransaction transaction = conn.BeginTransaction();
                     try
                     {
                         const string sql2 = @"
                             UPDATE CDN.DefAtrElem
                             SET DAE_Value = @newValue
                             WHERE DAE_Value = @oldValue AND DAE_DeAId = @deAId2";
-                        using (SqlCommand cmd2 = new SqlCommand(sql2, conn, transaction))
+                        using (IDbCommand cmd2 = CreateCommand(sql2, conn, transaction))
                         {
-                            cmd2.Parameters.AddWithValue("@newValue", newKey.Trim());
-                            cmd2.Parameters.AddWithValue("@oldValue", oldKey.Trim());
-                            cmd2.Parameters.AddWithValue("@deAId2", 2);
+                            cmd2.AddParameter("@newValue", newKey.Trim());
+                            cmd2.AddParameter("@oldValue", oldKey.Trim());
+                            cmd2.AddParameter("@deAId2", 2);
                             cmd2.ExecuteNonQuery();
                         }
                         const string sql2b = @"
                             UPDATE CDN.DefAtrElem
                             SET DAE_Value = @newValue
                             WHERE DAE_Value = @oldValue AND DAE_DeAId = @deAId2b";
-                        using (SqlCommand cmd2b = new SqlCommand(sql2b, conn, transaction))
+                        using (IDbCommand cmd2b = CreateCommand(sql2b, conn, transaction))
                         {
-                            cmd2b.Parameters.AddWithValue("@newValue", newKey.Trim());
-                            cmd2b.Parameters.AddWithValue("@oldValue", oldKey.Trim());
-                            cmd2b.Parameters.AddWithValue("@deAId2b", 2);
+                            cmd2b.AddParameter("@newValue", newKey.Trim());
+                            cmd2b.AddParameter("@oldValue", oldKey.Trim());
+                            cmd2b.AddParameter("@deAId2b", 2);
                             cmd2b.ExecuteNonQuery();
                         }
                         transaction.Commit();
-                        MessageBox.Show("Items were successfully updated in the database.", "Update success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        _showMessage("Items were successfully updated in the database.", "Update success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         LoadDataFromDb();
                         BuildHierarchyFromRawData();
                         UpdateFirstList();
@@ -216,20 +239,20 @@ namespace TreeCRUD
                     catch (Exception ex)
                     {
                         transaction.Rollback();
-                        MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        _showMessage($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item to edit from the first list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item to edit from the first list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveFirst_Click(object sender, EventArgs e)
         {
             if (listBoxFirst.SelectedItem is string selectedKey)
             {
-                DialogResult confirmResult = MessageBox.Show(
+                DialogResult confirmResult = _showMessage(
                     $"Are you sure you want to delete '{selectedKey}' and all its subordinate elements?",
                     "Confirm deletion",
                     MessageBoxButtons.YesNo,
@@ -239,19 +262,19 @@ namespace TreeCRUD
                     const string sql = @"
                         DELETE FROM CDN.DefAtrElem
                         WHERE DAE_Value LIKE @pathToDelete;";
-                    using (SqlConnection conn = new SqlConnection(ConnString))
-                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (IDbConnection conn = _connectionFactory())
+                    using (IDbCommand cmd = CreateCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@pathToDelete", selectedKey.Trim() + "%");
+                        cmd.AddParameter("@pathToDelete", selectedKey.Trim() + "%");
                         conn.Open();
                         int rowsAffected = cmd.ExecuteNonQuery();
                         if (rowsAffected > 0)
                         {
-                            MessageBox.Show($"Deleted {rowsAffected / 2} records from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            _showMessage($"Deleted {rowsAffected / 2} records from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                         else
                         {
-                            MessageBox.Show("No records found to delete in the database.", "Deletion error", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            _showMessage("No records found to delete in the database.", "Deletion error", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
                     LoadDataFromDb();
@@ -262,7 +285,7 @@ namespace TreeCRUD
             }
             else
             {
-                MessageBox.Show("Please select an item to remove from the first list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item to remove from the first list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void ListBoxFirst_SelectedIndexChanged(object sender, EventArgs e)
@@ -281,11 +304,11 @@ namespace TreeCRUD
         {
             if (listBoxFirst.SelectedItem is string first)
             {
-                string input = Prompt.ShowDialog("Enter the name of level 2:", AddItemCaption);
+                string input = _prompt("Enter the name of level 2:", AddItemCaption);
                 if (string.IsNullOrWhiteSpace(input)) return;
                 if (input.Contains("|"))
                 {
-                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string fullPath = $"{first}|{input}";
@@ -298,11 +321,11 @@ namespace TreeCRUD
                 )";
                 try
                 {
-                    using (SqlConnection conn = new SqlConnection(ConnString))
-                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (IDbConnection conn = _connectionFactory())
+                    using (IDbCommand cmd = CreateCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue(AttributeIdParameter, 1);
-                        cmd.Parameters.AddWithValue(ValueParameter, fullPath);
+                        cmd.AddParameter(AttributeIdParameter, 1);
+                        cmd.AddParameter(ValueParameter, fullPath);
                         conn.Open();
                         cmd.ExecuteNonQuery();
                     }
@@ -315,27 +338,27 @@ namespace TreeCRUD
                     {
                         listBoxSecond.SelectedItem = input;
                     }
-                    MessageBox.Show("The item was added successfully.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _showMessage("The item was added successfully.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while adding the item: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage($"An error occurred while adding the item: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first list to which you want to add a sub-item.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item from the first list to which you want to add a sub-item.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnEditSecond_Click(object sender, EventArgs e)
         {
             if (listBoxFirst.SelectedItem is string parentKey && listBoxSecond.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
+                string newKey = _prompt($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey}|{oldKey}";
@@ -346,17 +369,17 @@ namespace TreeCRUD
                         UPDATE CDN.DefAtrElem
                         SET DAE_Value = REPLACE(DAE_Value, @oldPath, @newPath)
                         WHERE DAE_Value LIKE @likePath";
-                    using (SqlConnection conn = new SqlConnection(ConnString))
-                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (IDbConnection conn = _connectionFactory())
+                    using (IDbCommand cmd = CreateCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@oldPath", oldPathFragment);
-                        cmd.Parameters.AddWithValue("@newPath", newPathFragment);
-                        cmd.Parameters.AddWithValue("@likePath", oldPathFragment + "%");
+                        cmd.AddParameter("@oldPath", oldPathFragment);
+                        cmd.AddParameter("@newPath", newPathFragment);
+                        cmd.AddParameter("@likePath", oldPathFragment + "%");
                         conn.Open();
                         int rowsAffected = cmd.ExecuteNonQuery();
                         if (rowsAffected == 0)
                         {
-                            MessageBox.Show("No matching records found in the database to update..", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            _showMessage("No matching records found in the database to update..", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                             return;
                         }
                     }
@@ -365,27 +388,27 @@ namespace TreeCRUD
                     listBoxFirst.DataSource = _subItems.Keys.ToList();
                     listBoxFirst.SelectedItem = parentKey;
                     listBoxSecond.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _showMessage("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first and second level lists.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item from the first and second level lists.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveSecond_Click(object sender, EventArgs e)
         {
             if (!(listBoxFirst.SelectedItem is string first) || !(listBoxSecond.SelectedItem is string second))
             {
-                MessageBox.Show("Please select an item to remove from the second list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item to remove from the second list.", "No choice", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            DialogResult confirmResult = MessageBox.Show(
+            DialogResult confirmResult = _showMessage(
                 $"Are you sure you want to delete the item? '{second}' from level 2 (related to '{first}')?",
                 "Confirm deletion",
                 MessageBoxButtons.YesNo,
@@ -400,29 +423,29 @@ namespace TreeCRUD
                 int rowsAffected = DeleteSecondLevelPath($"{first}|{second}");
                 if (rowsAffected == 0)
                 {
-                    MessageBox.Show("No item found to delete in the database.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    _showMessage("No item found to delete in the database.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                MessageBox.Show("The item was successfully deleted from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("The item was successfully deleted from the database.", "Successful removal", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 RefreshAfterSecondLevelDeletion(first);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"An error occurred while deleting the item from the database: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _showMessage($"An error occurred while deleting the item from the database: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private static int DeleteSecondLevelPath(string path)
+        private int DeleteSecondLevelPath(string path)
         {
             const string sql = @"
                 DELETE FROM CDN.DefAtrElem
                 WHERE DAE_DeAId = @deAId AND DAE_Value = @value";
-            using (SqlConnection conn = new SqlConnection(ConnString))
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            using (IDbConnection conn = _connectionFactory())
+            using (IDbCommand cmd = CreateCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue(AttributeIdParameter, 2);
-                cmd.Parameters.AddWithValue(ValueParameter, path);
+                cmd.AddParameter(AttributeIdParameter, 2);
+                cmd.AddParameter(ValueParameter, path);
                 conn.Open();
                 return cmd.ExecuteNonQuery();
             }
@@ -480,18 +503,18 @@ namespace TreeCRUD
         }
         private void BtnAddThird_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the third level:", AddItemCaption);
+            string input = _prompt("Enter the name of the third level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_Lp)
                 VALUES (@deAId, @value,
                (SELECT ISNULL(MAX(DAE_Lp), 0) + 1 FROM CDN.DefAtrElem WHERE DAE_DeAId = @deAId)
             )";
-            using (SqlConnection conn = new SqlConnection(ConnString))
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            using (IDbConnection conn = _connectionFactory())
+            using (IDbCommand cmd = CreateCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue(AttributeIdParameter, 3);
-                cmd.Parameters.AddWithValue(ValueParameter, input);
+                cmd.AddParameter(AttributeIdParameter, 3);
+                cmd.AddParameter(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -506,11 +529,11 @@ namespace TreeCRUD
                 listBoxSecond.SelectedItem is string parentKey2 &&
                 listBoxThird.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
+                string newKey = _prompt($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey1}|{parentKey2}|{oldKey}";
@@ -521,17 +544,17 @@ namespace TreeCRUD
                         UPDATE CDN.DefAtrElem
                         SET DAE_Value = REPLACE(DAE_Value, @oldPath, @newPath)
                         WHERE DAE_Value LIKE @likePath";
-                    using (SqlConnection conn = new SqlConnection(ConnString))
-                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (IDbConnection conn = _connectionFactory())
+                    using (IDbCommand cmd = CreateCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@oldPath", oldPathFragment);
-                        cmd.Parameters.AddWithValue("@newPath", newPathFragment);
-                        cmd.Parameters.AddWithValue("@likePath", oldPathFragment + "%");
+                        cmd.AddParameter("@oldPath", oldPathFragment);
+                        cmd.AddParameter("@newPath", newPathFragment);
+                        cmd.AddParameter("@likePath", oldPathFragment + "%");
                         conn.Open();
                         int rowsAffected = cmd.ExecuteNonQuery();
                         if (rowsAffected == 0)
                         {
-                            MessageBox.Show("No matching records found in the database to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            _showMessage("No matching records found in the database to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                             return;
                         }
                     }
@@ -541,16 +564,16 @@ namespace TreeCRUD
                     listBoxFirst.SelectedItem = parentKey1;
                     listBoxSecond.SelectedItem = parentKey2;
                     listBoxThird.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _showMessage("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select an item from the first, second, and third level lists..", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select an item from the first, second, and third level lists..", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveThird_Click(object sender, EventArgs e)
@@ -582,18 +605,18 @@ namespace TreeCRUD
         }
         private void BtnAddFourth_Click(object sender, EventArgs e)
         {
-            string input = Prompt.ShowDialog("Enter the name of the fourth level:", AddItemCaption);
+            string input = _prompt("Enter the name of the fourth level:", AddItemCaption);
             if (string.IsNullOrWhiteSpace(input)) return;
             const string sql = @"
                 INSERT INTO CDN.DefAtrElem (DAE_DeAId, DAE_Value, DAE_Lp)
                 VALUES (@deAId, @value,
                 (SELECT ISNULL(MAX(DAE_Lp), 0) + 1 FROM CDN.DefAtrElem WHERE DAE_DeAId = @deAId)
             )";
-            using (SqlConnection conn = new SqlConnection(ConnString))
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            using (IDbConnection conn = _connectionFactory())
+            using (IDbCommand cmd = CreateCommand(sql, conn))
             {
-                cmd.Parameters.AddWithValue(AttributeIdParameter, 55);
-                cmd.Parameters.AddWithValue(ValueParameter, input);
+                cmd.AddParameter(AttributeIdParameter, 55);
+                cmd.AddParameter(ValueParameter, input);
                 conn.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -608,11 +631,11 @@ namespace TreeCRUD
                 listBoxThird.SelectedItem is string parentKey3 &&
                 listBoxFourth.SelectedItem is string oldKey)
             {
-                string newKey = Prompt.ShowDialog($"Enter a new name for the item '{oldKey}':", EditItemCaption);
+                string newKey = _prompt($"Enter a new name for the item '{oldKey}':", EditItemCaption);
                 if (string.IsNullOrWhiteSpace(newKey) || newKey == oldKey) return;
                 if (newKey.Contains("|"))
                 {
-                    MessageBox.Show(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage(InvalidElementNameMessage, ValidationErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 string oldPathFragment = $"{parentKey1}|{parentKey2}|{parentKey3}|{oldKey}";
@@ -623,17 +646,17 @@ namespace TreeCRUD
                         UPDATE CDN.DefAtrElem
                         SET DAE_Value = REPLACE(DAE_Value, @oldPath, @newPath)
                         WHERE DAE_Value LIKE @likePath";
-                    using (SqlConnection conn = new SqlConnection(ConnString))
-                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (IDbConnection conn = _connectionFactory())
+                    using (IDbCommand cmd = CreateCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@oldPath", oldPathFragment);
-                        cmd.Parameters.AddWithValue("@newPath", newPathFragment);
-                        cmd.Parameters.AddWithValue("@likePath", oldPathFragment + "%");
+                        cmd.AddParameter("@oldPath", oldPathFragment);
+                        cmd.AddParameter("@newPath", newPathFragment);
+                        cmd.AddParameter("@likePath", oldPathFragment + "%");
                         conn.Open();
                         int rowsAffected = cmd.ExecuteNonQuery();
                         if (rowsAffected == 0)
                         {
-                            MessageBox.Show("No matching records found in the database to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            _showMessage("No matching records found in the database to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                             return;
                         }
                     }
@@ -644,16 +667,16 @@ namespace TreeCRUD
                     listBoxSecond.SelectedItem = parentKey2;
                     listBoxThird.SelectedItem = parentKey3;
                     listBoxFourth.SelectedItem = newKey;
-                    MessageBox.Show("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    _showMessage("The item was successfully updated.", SuccessCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _showMessage($"An error occurred while updating data: {ex.Message}", CriticalErrorCaption, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                MessageBox.Show("Please select the item on all four levels.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _showMessage("Please select the item on all four levels.", NoSelectionCaption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         private void BtnRemoveFourth_Click(object sender, EventArgs e)
@@ -709,6 +732,17 @@ namespace TreeCRUD
             }
         }
     }
+    internal static class CommandParameters
+    {
+        internal static void AddParameter(this IDbCommand command, string name, object value)
+        {
+            IDbDataParameter parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+    }
+
     public static class Prompt
     {
         public static string ShowDialog(string text, string caption)
