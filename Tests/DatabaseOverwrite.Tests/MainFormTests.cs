@@ -11,6 +11,8 @@ namespace DatabaseOverwrite.Tests
 {
     public sealed class MainFormTests
     {
+        private static readonly string[] ExpectedCommandArguments = { "test user", "test password", "test server", "test job" };
+
         [Theory]
         [InlineData(null, "password")]
         [InlineData(" ", "password")]
@@ -64,7 +66,7 @@ namespace DatabaseOverwrite.Tests
                     fixture.Output = output;
                     fixture.Click();
                     Assert.Equal(1, fixture.Calls);
-                    Assert.Equal(new[] { "test user", "test password", "test server", "test job" }, fixture.Arguments.Skip(1));
+                    Assert.Equal(ExpectedCommandArguments, fixture.Arguments.Skip(1));
                     Assert.Contains("sp_start_job", fixture.Arguments[0]);
                     Assert.Contains("$env:SQLSERVER_JOB.Replace", fixture.Arguments[0]);
                     Assert.Empty(fixture.Password.Text);
